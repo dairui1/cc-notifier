@@ -1,0 +1,5 @@
+{
+  "feishu_webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_KEY",
+  "ios_push_url": "https://api.day.app/YOUR_BARK_KEY",
+  "ios_push_enabled": true
+}
