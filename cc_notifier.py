@@ -143,6 +143,20 @@ def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
     if transcript_path:
         last_message = extract_last_message_from_jsonl(transcript_path)
     
+    # 错误关键词列表
+    error_keywords = [
+        "error", "fail", "forbidden", "denied", "not allowed", "403", "500", "api error", "exception", "request not allowed"
+    ]
+    
+    # 检查是否包含错误关键词
+    is_error = False
+    if last_message:
+        lower_msg = last_message.lower()
+        for kw in error_keywords:
+            if kw in lower_msg:
+                is_error = True
+                break
+    
     # 构建 markdown 内容
     content = ""
     
@@ -166,6 +180,14 @@ def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             content += "**⚠️ Debug:** 未提供 transcript_path"
     
+    # 根据是否错误调整卡片样式
+    if is_error:
+        card_title = "❌ 任务异常"
+        card_template = "red"
+    else:
+        card_title = "✅ 任务完成"
+        card_template = "green"
+    
     # 返回飞书卡片 2.0 格式
     return {
         "msg_type": "interactive",
@@ -174,9 +196,9 @@ def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
             "header": {
                 "title": {
                     "tag": "plain_text",
-                    "content": "✅ 任务完成"
+                    "content": card_title
                 },
-                "template": "green",  # 灰色主题
+                "template": card_template,  # 主题色
                 "padding": "12px 12px 12px 12px"
             },
             "body": {
