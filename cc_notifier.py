@@ -64,21 +64,24 @@ IOS_PUSH_URL = CONFIG["ios_push_url"]
 IOS_PUSH_ENABLED = CONFIG["ios_push_enabled"]
 
 
-def extract_last_message_from_jsonl(transcript_path: str) -> str:
+def extract_last_message_from_jsonl(transcript_path: str) -> tuple[str, str]:
     """
-    从 JSONL 格式的对话记录中提取最后一条消息的文本内容
+    从 JSONL 格式的对话记录中提取最后一条消息的文本内容和 cwd 信息
     
     JSONL 文件格式：每行一个 JSON 对象，包含对话记录
     我们要找的是最后一个包含 message.content[].text 的条目
+    
+    返回: (last_message_text, cwd)
     """
     try:
         # 展开路径（支持 ~ 等）
         expanded_path = os.path.expanduser(transcript_path)
         if not os.path.exists(expanded_path):
             print(f"[DEBUG] JSONL 文件不存在: {expanded_path}", file=sys.stderr)
-            return ""
+            return "", ""
         
         last_message_text = ""
+        cwd = ""
         line_count = 0
         message_count = 0
         
@@ -94,6 +97,16 @@ def extract_last_message_from_jsonl(transcript_path: str) -> str:
                 try:
                     # 解析每一行的 JSON
                     data = json.loads(line)
+                    
+                    # 尝试提取 cwd 信息（可能在不同位置）
+                    if 'cwd' in data:
+                        cwd = data.get('cwd', '')
+                    elif 'workspace' in data:
+                        cwd = data.get('workspace', '')
+                    elif 'workingDirectory' in data:
+                        cwd = data.get('workingDirectory', '')
+                    elif isinstance(data.get('message'), dict) and 'cwd' in data['message']:
+                        cwd = data['message'].get('cwd', '')
                     
                     # 检查是否包含 message 字段
                     if 'message' not in data or not isinstance(data['message'], dict):
@@ -119,12 +132,12 @@ def extract_last_message_from_jsonl(transcript_path: str) -> str:
                     print(f"[DEBUG] JSON 解析错误在第 {line_count} 行: {e}", file=sys.stderr)
                     continue
         
-        print(f"[DEBUG] 读取完成: 总行数={line_count}, 消息数={message_count}", file=sys.stderr)
-        return last_message_text
+        print(f"[DEBUG] 读取完成: 总行数={line_count}, 消息数={message_count}, cwd={cwd}", file=sys.stderr)
+        return last_message_text, cwd
         
     except Exception as e:
         print(f"读取 JSONL 文件出错：{e}", file=sys.stderr)
-        return ""
+        return "", ""
 
 
 def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -138,14 +151,15 @@ def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
     stop_hook_active = data.get("stop_hook_active", False)
     transcript_path = data.get("transcript_path", "")
     
-    # 从对话记录中提取最后的消息
+    # 从对话记录中提取最后的消息和 cwd 信息
     last_message = ""
+    cwd = ""
     if transcript_path:
-        last_message = extract_last_message_from_jsonl(transcript_path)
+        last_message, cwd = extract_last_message_from_jsonl(transcript_path)
     
     # 错误关键词列表
     error_keywords = [
-        "error", "fail", "forbidden", "denied", "not allowed", "403", "500", "api error", "exception", "request not allowed"
+        "API Error:",
     ]
     
     # 检查是否包含错误关键词
@@ -179,6 +193,15 @@ def format_stop_message(data: Dict[str, Any]) -> Dict[str, Any]:
             content += f"**📁 Debug - JSONL路径:**\n`{transcript_path}`"
         else:
             content += "**⚠️ Debug:** 未提供 transcript_path"
+    
+    # 添加项目信息（cwd）
+    if cwd:
+        # 获取项目名称（目录名）
+        project_name = os.path.basename(cwd.rstrip('/'))
+        if project_name:
+            content = f"<font size=2>📂 项目: {project_name}</font>\n" + content
+        else:
+            content = f"<font size=2>📂 路径: {cwd}</font>\n" + content
     
     # 根据是否错误调整卡片样式
     if is_error:
@@ -366,7 +389,7 @@ def main():
             # 发送 iOS 通知
             transcript_path = hook_data.get("transcript_path", "")
             if transcript_path:
-                last_message = extract_last_message_from_jsonl(transcript_path)
+                last_message, _ = extract_last_message_from_jsonl(transcript_path)
                 if last_message:
                     # 有消息内容，发送前100字符
                     send_ios_push_notification("任务完成", last_message[:100])
